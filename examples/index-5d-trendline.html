@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>指数5日分时示例</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <style type="text/css">
+    body {
+      margin: 0;
+      padding: 10px;
+      overflow:hidden ;
+      /* Better Font Rendering =========== */
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="trendLine"></canvas>
+  <script src="../dist/util.js"></script>
+  <script src="../dist/stock-chart.js"></script>
+  <script src="data.js"></script>
+  <script>
+    getJS("../dist/i-stock-chart.js").then(function(msg){
+      return getJS("../dist/trendline-util.js");
+    }).then(function(msg){
+      drawFiveDayTrendLine(trendLine.result.detail_list);
+    })
+  </script>
+</body>
+</html>

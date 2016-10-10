@@ -2,12 +2,18 @@ var StockChart;
 (function (StockChart) {
     var Chart = (function () {
         function Chart(options) {
+            this.pressTimer = null;
+            this.isLongPressed = false;
             this.canvas = document.getElementById(options.id);
             this.width = options.width || document.body.clientWidth;
             this.height = options.height;
             this.textOffsetY = options.textOffsetY || 2;
             this.figureOffsetY = options.figureOffsetY || 20;
-            this.volumeHeight = options.volumeHeight || 30;
+            if(options.volumeHeight==-1){
+                this.volumeHeight =  this.textOffsetY;
+            }else{
+                this.volumeHeight = options.volumeHeight || 40;
+            }
             this.axisTextHeight = options.axisTextHeight || 10;
             this.figureWidth = this.width;
             this.figureHeight = this.height - this.volumeHeight - this.axisTextHeight;
@@ -16,7 +22,11 @@ var StockChart;
             this.font = options.font || '10px Helvetica';
             this.textColor = options.textColor || 'rgba(138,138,138,1)';
             this.lineColor = options.lineColor || 'rgba(94,168,199,1)';
+            this.moveListener = options.moveListener;
+            this.popWindowKeys = options.popWindowKeys;
+            this.bindEvent();
         }
+
         Chart.prototype.initContext = function () {
             var dpr = Math.max(window.devicePixelRatio || 1, 1);
             var ctx = this.canvas.getContext('2d');
@@ -32,9 +42,12 @@ var StockChart;
             this.canvas.style.height = this.height + 'px';
             this.canvas.width = this.width * this.dpr;
             this.canvas.height = this.height * this.dpr;
+
         };
         Chart.prototype.drawLine = function (line, needStroke) {
-            if (needStroke === void 0) { needStroke = true; }
+            if (needStroke === void 0) {
+                needStroke = true;
+            }
             var _a = this, ctx = _a.ctx, dpr = _a.dpr;
             ctx.strokeStyle = line.color;
             ctx.lineWidth = line.size * dpr || 0;
@@ -46,9 +59,22 @@ var StockChart;
                 ctx.stroke();
             }
         };
-        Chart.prototype.drawDashedLine = function (p1, p2, size) {
-            if (size === void 0) { size = 2; }
+        Chart.prototype.drawRect = function (rec) {
             var _a = this, ctx = _a.ctx, dpr = _a.dpr;
+            ctx.fillStyle = rec.color;
+            ctx.lineWidth = rec.size * dpr || 0;
+            ctx.rect(rec.x * dpr, rec.y * dpr, rec.width * dpr, rec.height * dpr)
+            ctx.fill();
+        };
+        Chart.prototype.drawDashedLine = function (p1, p2, size, color) {
+            if (size === void 0) {
+                size = 2;
+            }
+
+            var _a = this, ctx = _a.ctx, dpr = _a.dpr;
+            if (color) {
+                ctx.strokeStyle = color;
+            }
             var diffX = p2[0] - p1[0];
             var diffY = p2[1] - p1[1];
             var dashes = Math.floor(Math.sqrt(diffX * diffX + diffY * diffY) / size);
@@ -64,7 +90,10 @@ var StockChart;
             ctx[q % 2 === 0 ? 'moveTo' : 'lineTo'](p2[0] * dpr, p2[1] * dpr);
         };
         Chart.prototype.drawText = function (text, point, textColor) {
-            if (textColor === void 0) { textColor = this.textColor; }
+
+            if (textColor === void 0) {
+                textColor = this.textColor;
+            }
             var _a = this, ctx = _a.ctx, dpr = _a.dpr;
             ctx.font = this.font.replace(/(\d+)(px|em|rem|pt)/g, function (matched, m1, m2) {
                 return m1 * dpr + m2;
@@ -86,6 +115,260 @@ var StockChart;
                 ctx.fill();
             }
         };
+        Chart.prototype.roundRect = function (x, y, width, height, radius, fill, stroke) {
+            var _a = this, ctx = _a.ctx, dpr = _a.dpr;
+            if (typeof stroke == "undefined") {
+                stroke = true;
+            }
+            if (typeof radius === "undefined") {
+                radius = 5;
+            }
+            x = x * dpr;
+            y = y * dpr;
+            width = width * dpr;
+            height = height * dpr;
+            radius = radius * dpr;
+
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            if (stroke) {
+                ctx.stroke();
+            }
+            if (fill) {
+                ctx.fill();
+            }
+        };
+        Chart.prototype.bindEvent = function () {
+            var _a = this;
+            var startX, endX, startY, endY, dx = 0, dy = 0;
+            this.canvas.addEventListener('touchstart', function (e) {
+                e.preventDefault();
+                _a.isLongPressed = false;
+                window.clearTimeout(_a.pressTimer);
+                var touch = event.touches[0];
+                startX = touch.pageX;
+                startY = touch.pageY;
+                endX = touch.pageX;
+                endY = touch.pageY;
+                dx = 0;
+                dy = 0;
+                _a.onTouchStart(startX, startY);
+                _a.pressTimer = window.setTimeout(function () {
+                    _a.isLongPressed = true;
+                    _a.onShowTouchLine(startX, startY, endX, endY, dx, dy);
+                }, 500);
+            });
+            this.canvas.addEventListener('touchend', function (e) {
+                e.preventDefault();
+                _a.onTouchEnd(startX, startY, endX, endY);
+                return true;
+            });
+
+            this.canvas.addEventListener('touchmove', function (e) {
+                e.preventDefault();
+                var touch = event.touches[0];
+                dx = touch.pageX - endX;
+                dy = touch.pageY = endY;
+                endX = touch.pageX;
+                endY = touch.pageY;
+                if (!_a.isLongPressed) {
+                    _a.onDrag(startX, startY, endX, endY, dx, dy);
+                } else {
+                    _a.onShowTouchLine(startX, startY, endX, endY, dx, dy);
+                }
+                window.clearTimeout(_a.pressTimer);
+            });
+        };
+        Chart.prototype.onTouchStart = function (startX, startY) {
+
+        };
+        Chart.prototype.onTouchEnd = function (startX, startY, endX, endY) {
+
+        };
+        Chart.prototype.onDrag = function (startX, startY, cx, cy, dx, dy) {
+
+        };
+        Chart.prototype.onShowTouchLine = function (startX, startY, cx, cy, dx, dy) {
+
+        };
+        Chart.prototype.invalidate = function () {
+
+        };
+        Chart.prototype.drawTouchLine = function () {
+
+        };
+        Chart.prototype.drawTouchCrossLine = function (barX, lineY) {
+            var _a = this, ctx = _a.ctx, grid = _a.grid, height = _a.height, figureWidth = _a.figureWidth, axisTextHeight = _a.axisTextHeight, textOffsetY = _a.textOffsetY, figureOffsetY = _a.figureOffsetY;
+            ctx.beginPath();
+            this.drawLine({
+                color: grid.color,
+                size: 1,
+                startPoint: [0, lineY],
+                points: [[figureWidth, lineY]]
+            });
+            this.drawLine({
+                color: grid.color,
+                size: 1,
+                startPoint: [barX, figureOffsetY],
+                points: [[barX, height - axisTextHeight - textOffsetY]]
+            });
+        }
+
+        Chart.prototype.drawLeftTouchRect = function (value, lineY) {
+            var _a = this, ctx = _a.ctx;
+            ctx.save();
+            ctx.beginPath();
+            var leftRectHeight = 12;
+            var leftRectWidth = (ctx.measureText(value).width + 10) / _a.dpr;
+            var leftRectY = lineY - leftRectHeight / 2;
+            var leftRect = {
+                color: "#2a2a2a",
+                size: 1,
+                x: 0,
+                y: leftRectY,
+                width: leftRectWidth,
+                height: leftRectHeight
+            };
+            this.drawRect(leftRect);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(value, leftRect.x * _a.dpr + (leftRect.width / 2) * _a.dpr, (leftRect.y + leftRect.height / 2) * _a.dpr);
+            ctx.restore();
+        };
+
+        Chart.prototype.drawRightTouchRect = function (value, lineY) {
+            var _a = this, ctx = _a.ctx, figureWidth = _a.figureWidth;
+            ctx.save();
+            ctx.beginPath();
+            var leftRectHeight = 12;
+            var leftRectWidth = (ctx.measureText(value).width + 10) / _a.dpr;
+            var leftRectY = lineY - leftRectHeight / 2;
+            var leftRect = {
+                color: "#2a2a2a",
+                size: 1,
+                x: figureWidth - leftRectWidth,
+                y: leftRectY,
+                width: leftRectWidth,
+                height: leftRectHeight
+            };
+            this.drawRect(leftRect);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(value, leftRect.x * _a.dpr + (leftRect.width / 2) * _a.dpr, (leftRect.y + leftRect.height / 2) * _a.dpr);
+            ctx.restore();
+        };
+
+        Chart.prototype.drawBottomTouchRect = function (value, barX) {
+            var _a = this, ctx = _a.ctx, height = _a.height, figureWidth = _a.figureWidth, axisTextHeight = _a.axisTextHeight, textOffsetY = _a.textOffsetY;
+            ctx.save();
+            ctx.beginPath();
+            var bottomRectWidth = (ctx.measureText(value).width + 10) / _a.dpr;
+            var bottomRectX = barX - bottomRectWidth / 2;
+            if (bottomRectX < 0) {
+                bottomRectX = 0;
+            }
+            if (bottomRectX > figureWidth - bottomRectWidth) {
+                bottomRectX = figureWidth - bottomRectWidth;
+            }
+            var bottomRect = {
+                color: "#2a2a2a",
+                size: 1,
+                x: bottomRectX,
+                y: height - axisTextHeight - textOffsetY,
+                width: bottomRectWidth,
+                height: axisTextHeight + textOffsetY
+            };
+
+            this.drawRect(bottomRect);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(value, bottomRect.x * _a.dpr + (bottomRect.width / 2) * _a.dpr, (bottomRect.y + bottomRect.height / 2) * _a.dpr);
+            ctx.restore();
+        };
+        Chart.prototype.popWindowDatas = function (index) {
+
+        };
+        Chart.prototype.drawTouchPopWindow = function (index, barX) {
+            var _a = this, ctx = _a.ctx, figureWidth = _a.figureWidth, figureOffsetY = _a.figureOffsetY, popWindowKeys = _a.popWindowKeys;
+            if(!popWindowKeys){
+                return;
+            }
+            ctx.save();
+            ctx.beginPath();
+            ctx.shadowColor = "RGBA(127,127,127,1)";
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = "RGBA(255, 255, 255, 1)";
+            var datas = this.popWindowDatas(index);
+            var topPadding = 5;
+            var bottomPadding = 5;
+            var leftPadding = 6;
+            var rightPadding = 6;
+            var lineWidthFontHeight = 15;
+            var keyAndValueSpace = 4;
+            var rec;
+            var calcTextWidth = function (text) {
+                return ctx.measureText(text).width;
+            };
+            var maxValueWidth = 0;
+            var maxKeyWidth = 0;
+            for (var i = 0; i < datas.length; i++) {
+                var cw = calcTextWidth(datas[i].value);
+                if (maxValueWidth < cw) {
+                    maxValueWidth = cw;
+                }
+            }
+            for (var i = 0; i < popWindowKeys.keys.length; i++) {
+                var cw = calcTextWidth(popWindowKeys.keys[i]);
+                if (maxKeyWidth < cw) {
+                    maxKeyWidth = cw;
+                }
+            }
+            var maxWindowWidth = (maxValueWidth + maxKeyWidth) / _a.dpr + keyAndValueSpace + leftPadding + rightPadding;
+            if (barX < figureWidth / 2) {
+                rec = {
+                    x: figureWidth - 30 - maxWindowWidth,
+                    y: figureOffsetY,
+                    width: maxWindowWidth,
+                    height: popWindowKeys.keys.length * lineWidthFontHeight + topPadding + bottomPadding,
+                };
+            } else {
+                rec = {
+                    x: 30,
+                    y: figureOffsetY,
+                    width: maxWindowWidth,
+                    height: popWindowKeys.keys.length * lineWidthFontHeight + topPadding + bottomPadding,
+                };
+            }
+            this.roundRect(rec.x, rec.y, rec.width, rec.height, 5, true);
+            ctx.restore();
+
+            for (var i = 0; i < popWindowKeys.keys.length; i++) {
+                ctx.fillStyle = popWindowKeys.color;
+                ctx.textAlign = "left";
+                ctx.textBaseline = "middle";
+                ctx.fillText(popWindowKeys.keys[i], (rec.x + leftPadding) * _a.dpr, ((rec.y + topPadding) + (i * lineWidthFontHeight + lineWidthFontHeight / 2)) * _a.dpr);
+
+                ctx.fillStyle = datas[i].color;
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                ctx.fillText(datas[i].value, (rec.x + rec.width - rightPadding) * _a.dpr, ((rec.y + topPadding) + (i * lineWidthFontHeight + lineWidthFontHeight / 2)) * _a.dpr);
+            }
+        };
+
         return Chart;
     }());
     StockChart.Chart = Chart;
@@ -113,6 +396,7 @@ var StockChart;
         }
         return output;
     }
+
     StockChart.mixins = mixins;
     function arrayObjectIndexOf(array, property, expectedValue) {
         var len = array.length;
@@ -123,13 +407,17 @@ var StockChart;
         }
         return -1;
     }
+
     StockChart.arrayObjectIndexOf = arrayObjectIndexOf;
 })(StockChart || (StockChart = {}));
 var __extends = (this && this.__extends) || function (d, b) {
-    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
-    function __() { this.constructor = d; }
-    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-};
+        for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+        function __() {
+            this.constructor = d;
+        }
+
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
 var StockChart;
 (function (StockChart) {
     var Period;
@@ -165,17 +453,88 @@ var StockChart;
             this.fallColor = options.fallColor;
             this.period = options.period;
             this.maLists = options.maLists;
+            this.cx = -1;
+            this.cy = -1;
         }
+
         KLine.prototype.initialize = function () {
+            this.invalidate();
+        };
+
+        KLine.prototype.invalidate = function () {
             _super.prototype.initialize.call(this);
+            this.ctx.clearRect(0, 0, this.width, this.height);
             this.drawGrid();
             this.drawPriceBar();
             this.drawMaLines();
             this.drawVolumeBar();
             this.drawAxisYText();
+            this.drawTouchLine(this.cx, this.cy);
+        }
+
+        KLine.prototype.onTouchStart = function (startX, startY) {
+
         };
+        KLine.prototype.onTouchEnd = function (startX, startY, endX, endY) {
+            this.cy = -1;
+            this.cx = -1;
+            this.invalidate();
+        };
+        KLine.prototype.onShowTouchLine = function (startX, startY, cx, cy, dx, dy) {
+            this.cy = cy;
+            this.cx = cx;
+            this.invalidate();
+        };
+
+        KLine.prototype.onDrag = function (startX, startY, cx, cy, dx, dy) {
+            this.moveListener(dx, this.unitX);
+        };
+
+        KLine.prototype.refresh = function (options) {
+            this.ohlcPrices = options.ohlcPrices;
+            this.volumes = options.volumes;
+            this.dates = options.dates;
+            this.maLists = options.maLists;
+            this.invalidate();
+        };
+
+        KLine.prototype.drawTouchLine = function (cx, cy) {
+            var _a = this, figureHeight = _a.figureHeight, dataCount = _a.dataCount, figureOffsetHeight = _a.figureOffsetHeight;
+            var len = ohlcPrices.length;
+            var highPrices = ohlcPrices.map(function (price) {
+                return price.h;
+            });
+            var count = Math.min(len, dataCount);
+            var lowPrices = ohlcPrices.map(function (price) {
+                return price.l;
+            });
+            var maxPrice = Math.max.apply(null, highPrices);
+            var minPrice = Math.min.apply(null, lowPrices);
+            var unitX = this.unitX;
+            var unitY = this.unitY = (figureOffsetHeight - 10) / (maxPrice - minPrice);
+            this.roofPrice = maxPrice;
+            this.floorPrice = minPrice;
+            var calcY = this.calcY = function (price) {
+                return Math.round(figureHeight - Math.abs(price - minPrice) * unitY - 10);
+            };
+            var index = Math.round((cx - unitX / 2) / unitX);
+
+            if (index < 0 || index >= count) {
+                return;
+            }
+            var date = this.dates[index];
+            var barX = unitX * index + unitX / 2;
+            var closePrice = ohlcPrices[index].c;
+            var lineY = calcY(closePrice);
+
+            this.drawTouchCrossLine(barX, lineY);
+            this.drawLeftTouchRect(closePrice, lineY);
+            this.drawBottomTouchRect(date, barX);
+            this.drawTouchPopWindow(index, barX);
+        };
+
         KLine.prototype.drawGrid = function () {
-            var _a = this, ctx = _a.ctx, grid = _a.grid, height = _a.height, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY, volumeTopHeight = _a.volumeTopHeight;
+            var _a = this, ctx = _a.ctx, grid = _a.grid, axisTextHeight = _a.axisTextHeight, textOffsetY = _a.textOffsetY, height = _a.height, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY, volumeTopHeight = _a.volumeTopHeight;
             ctx.beginPath();
             this.drawLine({
                 color: grid.color,
@@ -184,27 +543,21 @@ var StockChart;
             }, false);
             this.drawLine({
                 color: grid.color,
-                startPoint: [0, volumeTopHeight],
-                points: [[figureWidth, volumeTopHeight]]
-            }, false);
-            this.drawLine({
-                color: grid.color,
                 startPoint: [0, 0],
                 points: [[figureWidth, 0]]
             }, false);
             this.drawLine({
                 color: grid.color,
-                startPoint: [0, this.height],
-                points: [[figureWidth, height]]
+                startPoint: [0, height - textOffsetY - axisTextHeight],
+                points: [[figureWidth, height - textOffsetY - axisTextHeight]]
             });
             var gridY = figureOffsetHeight / grid.y;
             for (var i = 0; i < grid.y; i++) {
                 ctx.beginPath();
-                this.drawLine({
-                    color: grid.color,
-                    startPoint: [0, gridY * i + figureOffsetY],
-                    points: [[figureWidth, gridY * i + figureOffsetY]]
-                });
+                this.drawDashedLine(
+                    [0, gridY * i + figureOffsetY],
+                    [figureWidth, gridY * i + figureOffsetY], 4);
+                ctx.stroke();
             }
             this.drawGridX();
         };
@@ -261,7 +614,7 @@ var StockChart;
             }
         };
         KLine.prototype.drawVolumeBar = function () {
-            var _a = this, ctx = _a.ctx, volumes = _a.volumes, ohlcPrices = _a.ohlcPrices, dataCount = _a.dataCount, height = _a.height, volumeHeight = _a.volumeHeight, textOffsetY = _a.textOffsetY, unitX = _a.unitX;
+            var _a = this, ctx = _a.ctx, volumes = _a.volumes, axisTextHeight = _a.axisTextHeight, ohlcPrices = _a.ohlcPrices, dataCount = _a.dataCount, height = _a.height, volumeHeight = _a.volumeHeight, textOffsetY = _a.textOffsetY, unitX = _a.unitX;
             var len = volumes.length;
             var count = Math.min(len, dataCount);
             var maxVolume = Math.max.apply(null, volumes);
@@ -273,15 +626,15 @@ var StockChart;
             var currentVolumeHeight;
             for (var i = 0; i < count; i++) {
                 var barX = unitX * i + unitX / 2;
-                currentVolumeHeight = Math.round(height - (volumes[i] - minVolume) * volumeUnitY);
-                if (currentVolumeHeight === height) {
-                    currentVolumeHeight = height - 1;
+                currentVolumeHeight = Math.round(height - textOffsetY - axisTextHeight - (volumes[i] - minVolume) * volumeUnitY);
+                if (currentVolumeHeight === height - textOffsetY - axisTextHeight) {
+                    currentVolumeHeight = height - textOffsetY - axisTextHeight - 1;
                 }
                 ctx.beginPath();
                 this.drawLine({
                     color: this.getBarColor(ohlcPrices, i),
                     size: 4,
-                    startPoint: [barX, height],
+                    startPoint: [barX, height - textOffsetY - axisTextHeight],
                     points: [[barX, currentVolumeHeight]]
                 });
             }
@@ -367,8 +720,18 @@ var StockChart;
             }
         };
         KLine.prototype.drawAxisYText = function () {
-            this.drawText(this.roofPrice.toFixed(2), [0, this.figureOffsetY - this.textOffsetY]);
-            this.drawText(this.floorPrice.toFixed(2), [0, this.figureHeight - this.textOffsetY]);
+            var roofY = this.figureOffsetY - this.textOffsetY;
+            var floorY = this.figureHeight - this.textOffsetY;
+            var figureOffset = (floorY - roofY) / 4;
+
+            var roofPrice = this.roofPrice.toFixed(2);
+            var floorPrice = this.floorPrice.toFixed(2);
+            var priceOffset = (roofPrice - floorPrice) / 4;
+            this.drawText(this.roofPrice.toFixed(2), [0, roofY]);
+            this.drawText((roofPrice - priceOffset * 1).toFixed(2), [0, roofY + figureOffset * 1]);
+            this.drawText((roofPrice - priceOffset * 2).toFixed(2), [0, roofY + figureOffset * 2]);
+            this.drawText((roofPrice - priceOffset * 3).toFixed(2), [0, roofY + figureOffset * 3]);
+            this.drawText(this.floorPrice.toFixed(2), [0, floorY]);
         };
         KLine.prototype.drawGridX = function () {
             var _this = this;
@@ -441,16 +804,15 @@ var StockChart;
             }
         };
         KLine.prototype.drawGridTextX = function (date, index) {
-            var _a = this, grid = _a.grid, dataCount = _a.dataCount, height = _a.height, volumeHeight = _a.volumeHeight, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetY = _a.figureOffsetY;
+            var _a = this, ctx = _a.ctx, grid = _a.grid, textOffsetY = _a.textOffsetY, axisTextHeight = _a.axisTextHeight, dataCount = _a.dataCount, height = _a.height, volumeHeight = _a.volumeHeight, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetY = _a.figureOffsetY;
             var unitX = figureWidth / dataCount;
-            var axisY = height - volumeHeight;
+            var axisY = height - textOffsetY;
             var barX = unitX * index + unitX / 2;
             this.drawText(date, [unitX * index - 15, axisY]);
-            this.drawLine({
-                color: grid.color,
-                startPoint: [barX, figureOffsetY],
-                points: [[barX, figureHeight]]
-            });
+            this.drawDashedLine(
+                [barX, figureOffsetY],
+                [barX, height - axisTextHeight - textOffsetY], 4);
+            ctx.stroke();
         };
         KLine.prototype.getBarColor = function (bars, index) {
             var _a = this, riseColor = _a.riseColor, fallColor = _a.fallColor;
@@ -474,24 +836,7 @@ var StockChart;
         };
         return KLine;
     }(StockChart.Chart));
-    function drawKLine(options) {
-        var defaultOptions = {
-            dataCount: 50,
-            grid: {
-                y: 4,
-                color: 'rgba(221,221,221,1)'
-            },
-            lineColor: 'rgba(94,168,199,1)',
-            volumeColor: 'rgba(130,152,200,1)',
-            riseColor: 'rgba(252,63,29,1)',
-            fallColor: 'rgba(85,170,48,1)',
-            period: 0
-        };
-        options = StockChart.mixins({}, defaultOptions, options);
-        var kLine = new KLine(options);
-        kLine.initialize();
-    }
-    StockChart.drawKLine = drawKLine;
+    StockChart.KLine = KLine;
 })(StockChart || (StockChart = {}));
 var StockChart;
 (function (StockChart) {
@@ -501,6 +846,7 @@ var StockChart;
             _super.call(this, options);
             this.preClosePrice = options.preClosePrice;
             this.prices = options.prices;
+            this.times = options.times;
             this.volumes = options.volumes;
             this.avgPrices = options.avgPrices;
             this.fillColor = options.fillColor;
@@ -508,17 +854,37 @@ var StockChart;
             this.volumeColor = options.volumeColor;
             this.avgLineColor = options.avgLineColor;
             this.isIndex = options.isIndex;
+            this.cx = -1;
+            this.cy = -1;
         }
+
         TrendLine.prototype.initialize = function () {
             _super.prototype.initialize.call(this);
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             this.drawGrid();
             this.drawPriceLine();
             this.drawMiddleLine();
             this.drawVolumeLine();
             this.drawAxisText();
+            this.drawTouchLine(this.cx, this.cy);
         };
+
+        TrendLine.prototype.onTouchStart = function (startX, startY) {
+
+        };
+        TrendLine.prototype.onTouchEnd = function (startX, startY, endX, endY) {
+            this.cy = -1;
+            this.cx = -1;
+            this.initialize();
+        };
+        TrendLine.prototype.onShowTouchLine = function (startX, startY, cx, cy, dx, dy) {
+            this.cy = cy;
+            this.cx = cx;
+            this.initialize();
+        };
+
         TrendLine.prototype.drawGrid = function () {
-            var _a = this, ctx = _a.ctx, grid = _a.grid, height = _a.height, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY;
+            var _a = this, ctx = _a.ctx, grid = _a.grid, textOffsetY = _a.textOffsetY, axisTextHeight = _a.axisTextHeight, height = _a.height, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY;
             ctx.beginPath();
             this.drawLine({
                 color: grid.color,
@@ -529,7 +895,7 @@ var StockChart;
                 color: grid.color,
                 startPoint: [0, 0],
                 points: [[figureWidth, 0]]
-            }, false);
+            }, true);
             var gridX = figureWidth / grid.x;
             for (var i = 1; i < grid.x; i++) {
                 this.drawLine({
@@ -540,17 +906,98 @@ var StockChart;
             }
             var gridY = figureOffsetHeight / grid.y;
             for (var j = 0; j < grid.y; j++) {
-                this.drawLine({
-                    color: grid.color,
-                    startPoint: [0, gridY * j + figureOffsetY],
-                    points: [[figureWidth, gridY * j + figureOffsetY]]
-                }, false);
+
+                ctx.beginPath();
+                this.drawDashedLine(
+                    [0, gridY * j + figureOffsetY],
+                    [figureWidth, gridY * j + figureOffsetY], 4);
+                ctx.stroke();
             }
+
+            this.drawGridYLine();
+
             this.drawLine({
                 color: grid.color,
-                startPoint: [0, height],
-                points: [[figureWidth, height]]
+                startPoint: [0, height - axisTextHeight - textOffsetY],
+                points: [[figureWidth, height - axisTextHeight - textOffsetY]]
             });
+        };
+
+        TrendLine.prototype.drawGridYLine=function(){
+            var _a = this, ctx = _a.ctx, grid = _a.grid, textOffsetY = _a.textOffsetY, axisTextHeight = _a.axisTextHeight, height = _a.height, figureWidth = _a.figureWidth;
+            for (var i = 1; i < 4; i++) {
+                ctx.beginPath();
+                this.drawDashedLine(
+                    [(figureWidth / 4) * i, 0],
+                    [(figureWidth / 4) * i, height - axisTextHeight - textOffsetY], 4, grid.color);
+                ctx.stroke();
+            }
+        };
+
+        TrendLine.prototype.drawTouchLine = function (cx, cy) {
+            var _this = this;
+            var _a = this, ctx = _a.ctx, dpr = _a.dpr, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY;
+            var _b = this, prices = _b.prices, preClosePrice = _b.preClosePrice, avgPrices = _b.avgPrices, isIndex = _b.isIndex;
+            var isFlat = false;
+            var isSuspended = false;
+            var maxPrice = Math.max.apply(null, prices);
+            var minPrice = Math.min.apply(null, prices);
+            var maxDiff = Math.abs(maxPrice - preClosePrice);
+            var minDiff = Math.abs(preClosePrice - minPrice);
+            var unitX = this.unitX = figureWidth / this.getPointsCount();
+            var unitY;
+            var calcY = function (price) {
+                if (isSuspended) {
+                    return figureOffsetHeight / 2 + figureOffsetY;
+                }
+                else if (isFlat) {
+                    return figureOffsetY;
+                }
+                else {
+                    return figureHeight - Math.abs(price - _this.floorPrice) * unitY;
+                }
+            };
+            var calcPercent = function (price) {
+                return ((price - preClosePrice) / preClosePrice * 100).toFixed(2) + '%';
+            };
+            if (maxPrice === minPrice) {
+                isFlat = true;
+            }
+            if (maxDiff >= minDiff) {
+                if (maxPrice !== preClosePrice) {
+                    unitY = figureOffsetHeight / ((maxPrice - preClosePrice) * 2);
+                    this.roofPrice = maxPrice;
+                    this.floorPrice = preClosePrice * 2 - maxPrice;
+                }
+                else {
+                    this.roofPrice = preClosePrice * 1.02;
+                    this.floorPrice = preClosePrice * 0.98;
+                    isSuspended = true;
+                }
+            }
+            else {
+                unitY = figureOffsetHeight / ((preClosePrice - minPrice) * 2);
+                this.roofPrice = (preClosePrice - minPrice) * 2 + minPrice;
+                this.floorPrice = minPrice;
+            }
+            var index = Math.round(cx / unitX);
+
+            if (index < 0 || index >= prices.length) {
+                return;
+            }
+            var time = this.times[index];
+            var barX = unitX * index;
+            var price = prices[index];
+            var lineY = calcY(price);
+
+            this.drawTouchCrossLine(barX, lineY);
+            this.drawLeftTouchRect(price, lineY);
+            this.drawRightTouchRect(calcPercent(price), lineY);
+            this.drawBottomTouchRect(time, barX);
+            this.drawTouchPopWindow(index, barX);
+        };
+        TrendLine.prototype.getPointsCount = function(){
+
         };
         TrendLine.prototype.drawPriceLine = function () {
             var _this = this;
@@ -562,7 +1009,7 @@ var StockChart;
             var minPrice = Math.min.apply(null, prices);
             var maxDiff = Math.abs(maxPrice - preClosePrice);
             var minDiff = Math.abs(preClosePrice - minPrice);
-            var unitX = this.unitX = figureWidth / (60 * 4);
+            var unitX = this.unitX = figureWidth / this.getPointsCount();
             var unitY;
             var calcY = function (price) {
                 if (isSuspended) {
@@ -635,23 +1082,37 @@ var StockChart;
                 });
             }
         };
+
         TrendLine.prototype.drawAxisText = function () {
-            var _a = this, height = _a.height, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY, textOffsetY = _a.textOffsetY, volumeHeight = _a.volumeHeight;
+            var _a = this, ctx = _a.ctx, dpr = _a.dpr, grid = _a.grid, height = _a.height, axisTextHeight = _a.axisTextHeight, figureWidth = _a.figureWidth, figureHeight = _a.figureHeight, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY, textOffsetY = _a.textOffsetY, volumeHeight = _a.volumeHeight;
             var _b = this, roofPrice = _b.roofPrice, floorPrice = _b.floorPrice, preClosePrice = _b.preClosePrice, roofPercent = _b.roofPercent, floorPercent = _b.floorPercent;
-            var axisY = height - volumeHeight;
+            var axisY = height - textOffsetY;
             var roofY = figureOffsetY - textOffsetY;
             var floorY = figureHeight - textOffsetY;
+            ctx.font = this.font.replace(/(\d+)(px|em|rem|pt)/g, function (matched, m1, m2) {
+                return m1 * dpr + m2;
+            });
+
+            var w5words = ctx.measureText('00:00').width / dpr;
+            var w11words = ctx.measureText('11:30/13:00').width / dpr;
+
             this.drawText('09:30', [0, axisY]);
-            this.drawText('10:30', [figureWidth / 4 - 13, axisY]);
-            this.drawText('11:30/13:00', [figureWidth / 2 - 25, axisY]);
-            this.drawText('14:00', [(figureWidth / 4) * 3 - 13, axisY]);
-            this.drawText('15:00', [figureWidth - 27, axisY]);
+            this.drawText('10:30', [figureWidth / 4 - w5words / 2, axisY]);
+            this.drawText('11:30/13:00', [figureWidth / 2 - w11words / 2, axisY]);
+            this.drawText('14:00', [(figureWidth / 4) * 3 - w5words / 2, axisY]);
+            this.drawText('15:00', [figureWidth - w5words, axisY]);
+
             this.drawText(roofPrice.toFixed(2), [0, roofY]);
             this.drawText(floorPrice.toFixed(2), [0, floorY]);
             this.drawText(preClosePrice.toFixed(2), [0, figureOffsetHeight / 2 + roofY]);
-            this.drawText(roofPercent, [figureWidth - 35, roofY]);
-            this.drawText(floorPercent, [figureWidth - 40, floorY]);
-            this.drawText('0.00%', [figureWidth - 30, figureOffsetHeight / 2 + roofY]);
+
+            var roofPercentWidth = ctx.measureText(roofPercent).width / dpr;
+            this.drawText(roofPercent, [figureWidth - roofPercentWidth, roofY]);
+            var floorPercentWidth = ctx.measureText(floorPercentWidth).width / dpr;
+            this.drawText(floorPercent, [figureWidth - floorPercentWidth, floorY]);
+            var zeroTextWidth = ctx.measureText('0.00%').width / dpr;
+            this.drawText('0.00%', [figureWidth - zeroTextWidth, figureOffsetHeight / 2 + roofY]);
+
         };
         TrendLine.prototype.drawMiddleLine = function () {
             var _a = this, ctx = _a.ctx, figureWidth = _a.figureWidth, figureOffsetHeight = _a.figureOffsetHeight, figureOffsetY = _a.figureOffsetY;
@@ -662,37 +1123,26 @@ var StockChart;
             ctx.stroke();
         };
         TrendLine.prototype.drawVolumeLine = function () {
-            var _a = this, ctx = _a.ctx, volumes = _a.volumes, volumeHeight = _a.volumeHeight, height = _a.height, textOffsetY = _a.textOffsetY, unitX = _a.unitX;
+            var _a = this, ctx = _a.ctx, volumes = _a.volumes, axisTextHeight = _a.axisTextHeight, volumeHeight = _a.volumeHeight, height = _a.height, textOffsetY = _a.textOffsetY, unitX = _a.unitX;
             var maxVolume = Math.max.apply(null, volumes);
             var minVolume = Math.min.apply(null, volumes);
             var volumeUnitY = (volumeHeight - textOffsetY) / (maxVolume - minVolume);
+
             for (var i = 0; i < volumes.length; i++) {
                 ctx.beginPath();
+                var currentVolumeHeight = height - axisTextHeight - textOffsetY - (volumes[i] - minVolume) * volumeUnitY;
+                if (currentVolumeHeight === height - textOffsetY - axisTextHeight) {
+                    currentVolumeHeight = height - textOffsetY - axisTextHeight - 1;
+                }
                 this.drawLine({
                     color: this.volumeColor,
                     size: 1,
-                    startPoint: [unitX * i, height],
-                    points: [[unitX * i, height - (volumes[i] - minVolume) * volumeUnitY]]
+                    startPoint: [unitX * i, height - axisTextHeight - textOffsetY],
+                    points: [[unitX * i, currentVolumeHeight]]
                 });
             }
         };
         return TrendLine;
     }(StockChart.Chart));
-    function drawTrendLine(options) {
-        var defaultOptions = {
-            grid: {
-                x: 4,
-                y: 4,
-                color: 'rgba(221,221,221,1)'
-            },
-            fillColor: 'rgba(187,226,246,.5)',
-            middleLineColor: 'rgba(112,179,215,1)',
-            volumeColor: 'rgba(130,152,200,1)',
-            avgLineColor: 'rgba(169,77,180,.5)'
-        };
-        options = StockChart.mixins({}, defaultOptions, options);
-        var trendLine = new TrendLine(options);
-        trendLine.initialize();
-    }
-    StockChart.drawTrendLine = drawTrendLine;
+    StockChart.TrendLine = TrendLine;
 })(StockChart || (StockChart = {}));

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>股票各曲线示例</title>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+    <style type="text/css">
+        body {
+            margin: 0;
+            padding: 10px;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <button onclick="javascript:window.location.href='astock-trendline.html'">A股分时</button>
+    <button onclick="javascript:window.location.href='astock-5d-trendline.html'">A股5日分时</button>
+    <button onclick="javascript:window.location.href='astock-kline.html'">A股K线</button>
+    <br>
+    <button onclick="javascript:window.location.href='fund-trendline.html'">基金分时</button>
+    <button onclick="javascript:window.location.href='fund-networthline.html'">基金净值</button>
+    <button onclick="javascript:window.location.href='fund-kline.html'">基金K线</button>
+    <br>
+    <button onclick="javascript:window.location.href='index-trendline.html'">指数分时</button>
+    <button onclick="javascript:window.location.href='index-5d-trendline.html'">指数5日分时</button>
+    <button onclick="javascript:window.location.href='index-kline.html'">指数K线</button>
+</div>
+<div>
+    <p>股票各曲线例子，基于<a href="https://github.com/roshanca/stock-chart进行的拓展">stock-chart</a>进行的拓展项目，
+        数据是是假数据不完全合适，支持K线拖动，各曲线长按弹出按下点数据指标。
+    </p>
+</div>
+</body>
+</html>
